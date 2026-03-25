@@ -1,0 +1,32 @@
+name: Build Flutter Web
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+      
+      - name: Get dependencies
+        run: flutter pub get
+      
+      - name: Build web
+        run: flutter build web --release
+      
+      - name: Commit and push build
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add build/web
+          git commit -m "Build: Flutter web compiled" || true
+          git push
