@@ -1,1 +1,10 @@
-{\n  "version": 2,\n  "build": {\n    "env": {\n      "FLUTTER_WEB": true\n    },\n    "commands": {\n      "build": "flutter build web"\n    }\n  },\n  "routes": [\n    {\n      "src": "/(.*)",\n      "dest": "/index.html"\n    }\n  ]\n}
+{
+  "buildCommand": "flutter pub get && flutter build web --release",
+  "outputDirectory": "build/web",
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}
