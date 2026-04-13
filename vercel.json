@@ -1,0 +1,10 @@
+{
+  "buildCommand": "",
+  "outputDirectory": "build/web",
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}
