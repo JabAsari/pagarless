@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pagarless/main.dart';
@@ -22,13 +21,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isLoading = true;
   String _chartType = 'pie';
   
-  final List<Color> _availableColors = [
-    const Color(0xFF2E7D32), // Verde (Default)
-    const Color(0xFF1976D2), // Azul
-    const Color(0xFFD32F2F), // Rojo
-    const Color(0xFF7B1FA2), // Morado
-    const Color(0xFFF57C00), // Naranja
-    const Color(0xFF00796B), // Teal
+  final List<Map<String, dynamic>> _availableColors = [
+    {'color': const Color(0xFF2E7D32), 'name': 'Verde Bosque'},
+    {'color': const Color(0xFF6750A4), 'name': 'Morado Lavanda'},
+    {'color': const Color(0xFF006C51), 'name': 'Esmeralda'},
+    {'color': const Color(0xFF3F5AA9), 'name': 'Azul Índigo'},
+    {'color': const Color(0xFF9C413D), 'name': 'Rojo Ladrillo'},
+    {'color': const Color(0xFF825500), 'name': 'Dorado'},
+    {'color': const Color(0xFF006874), 'name': 'Océano'},
+    {'color': const Color(0xFF984061), 'name': 'Frambuesa'},
   ];
 
   @override
@@ -151,6 +152,86 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await prefs.setInt('seedColor', color.value);
   }
 
+  // Muestra un diálogo para elegir un color personalizado usando sliders RGB
+  void _showCustomColorPicker() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        Color pickerColor = colorNotifier.value;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Color Personalizado'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Vista previa del color
+                    Container(
+                      height: 50,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: pickerColor,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    // Sliders para RGB
+                    _buildColorSlider('Rojo', pickerColor.red, Colors.red, (val) {
+                      setState(() => pickerColor = Color.fromARGB(255, val, pickerColor.green, pickerColor.blue));
+                    }),
+                    _buildColorSlider('Verde', pickerColor.green, Colors.green, (val) {
+                      setState(() => pickerColor = Color.fromARGB(255, pickerColor.red, val, pickerColor.blue));
+                    }),
+                    _buildColorSlider('Azul', pickerColor.blue, Colors.blue, (val) {
+                      setState(() => pickerColor = Color.fromARGB(255, pickerColor.red, pickerColor.green, val));
+                    }),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancelar'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    _changeColor(pickerColor);
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Guardar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildColorSlider(String label, int value, Color activeColor, Function(int) onChanged) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(value.toString()),
+          ],
+        ),
+        Slider(
+          value: value.toDouble(),
+          min: 0,
+          max: 255,
+          activeColor: activeColor,
+          onChanged: (v) => onChanged(v.toInt()),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentTheme = Theme.of(context).brightness == Brightness.dark ? ThemeMode.dark : ThemeMode.light;
@@ -240,18 +321,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   child: Wrap(
                     spacing: 12,
-                    children: _availableColors.map((color) {
-                      return GestureDetector(
-                        onTap: () => _changeColor(color),
-                        child: CircleAvatar(
-                          backgroundColor: color,
-                          radius: 18,
-                          child: colorNotifier.value.value == color.value
-                              ? const Icon(Icons.check, color: Colors.white, size: 20)
-                              : null,
+                    runSpacing: 12, // Espacio vertical si se crean nuevas líneas
+                    children: [
+                      ..._availableColors.map((item) {
+                        final color = item['color'] as Color;
+                        final name = item['name'] as String;
+                        final isSelected = colorNotifier.value.value == color.value;
+                        return GestureDetector(
+                          onTap: () => _changeColor(color),
+                          child: Semantics(
+                            label: 'Color $name',
+                            selected: isSelected,
+                            button: true,
+                            child: CircleAvatar(
+                              backgroundColor: color,
+                              radius: 18,
+                              child: isSelected
+                                  ? const Icon(Icons.check, color: Colors.white, size: 20)
+                                  : null,
+                            ),
+                          ),
+                        );
+                      }),
+                      GestureDetector(
+                        onTap: _showCustomColorPicker,
+                        child: Semantics(
+                          label: 'Seleccionar color personalizado',
+                          button: true,
+                          child: CircleAvatar(
+                            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                            radius: 18,
+                            child: const Icon(Icons.colorize, size: 20),
+                          ),
                         ),
-                      );
-                    }).toList(),
+                      ),
+                    ],
                   ),
                 ),
 

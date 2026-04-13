@@ -3,7 +3,9 @@ import 'package:pagarless/collections/saving.dart';
 
 class SavingsTab extends StatelessWidget {
   final List<Saving> savings;
-  const SavingsTab({super.key, this.savings = const []});
+  final Function(Saving saving)? onSavingTapped;
+
+  const SavingsTab({super.key, this.savings = const [], this.onSavingTapped});
 
   @override
   Widget build(BuildContext context) {
@@ -15,9 +17,10 @@ class SavingsTab extends StatelessWidget {
           final item = savings[index];
           return Card(
             child: ListTile(
+              onTap: () => onSavingTapped?.call(item),
               leading: CircleAvatar(backgroundColor: Theme.of(context).colorScheme.secondaryContainer, child: const Icon(Icons.savings, color: Colors.green)),
               title: Text(item.name),
-              subtitle: Text('Objetivo: \$${item.targetAmount.toStringAsFixed(2)}'),
+              subtitle: Text('\$${item.currentAmount.toStringAsFixed(2)} de \$${item.targetAmount.toStringAsFixed(2)}'),
               trailing: const Icon(Icons.chevron_right),
             ),
           );

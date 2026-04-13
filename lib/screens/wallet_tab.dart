@@ -13,6 +13,8 @@ class WalletTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     if (cards.isNotEmpty) {
       // Usamos ListView para una lista vertical donde las tarjetas se apilan
       return ListView.builder(
@@ -20,27 +22,38 @@ class WalletTab extends StatelessWidget {
         itemCount: cards.length,
         itemBuilder: (context, index) {
           final card = cards[index];
+          final networkUpper = card.network.toUpperCase();
 
-          // Define el gradiente de color basado en la red de la tarjeta
+          // Definir gradientes específicos por marca para mejorar la distinción visual
           final LinearGradient cardGradient;
-          if (card.network == 'VISA') {
-            cardGradient = LinearGradient(colors: [Colors.indigo.shade900, Colors.lightBlue.shade300], begin: Alignment.topLeft, end: Alignment.bottomRight);
-          } else if (card.network == 'MASTERCARD') {
-            cardGradient = LinearGradient(colors: [Colors.red.shade900, Colors.orange.shade600], begin: Alignment.topLeft, end: Alignment.bottomRight);
+          if (networkUpper.contains('VISA')) {
+            cardGradient = LinearGradient(colors: [Colors.indigo.shade900, const Color(0xFF1A1F71)], begin: Alignment.topLeft, end: Alignment.bottomRight);
+          } else if (networkUpper.contains('MASTERCARD')) {
+            cardGradient = LinearGradient(colors: [Colors.grey.shade900, const Color(0xFFEB001B).withOpacity(0.8)], begin: Alignment.topLeft, end: Alignment.bottomRight);
+          } else if (networkUpper.contains('AMEX') || networkUpper.contains('AMERICAN')) {
+            cardGradient = LinearGradient(colors: [const Color(0xFF2E77BC), const Color(0xFF00C6FF)], begin: Alignment.topLeft, end: Alignment.bottomRight);
           } else {
-            // Gradiente por defecto para otras redes o desconocidas
-            cardGradient = LinearGradient(colors: [Colors.grey.shade900, Colors.blueGrey.shade500], begin: Alignment.topLeft, end: Alignment.bottomRight);
+            // Fallback al tema de la app si es desconocida
+            cardGradient = LinearGradient(colors: [colorScheme.primary, colorScheme.tertiary], begin: Alignment.topLeft, end: Alignment.bottomRight);
           }
 
           // Define el widget del logo basado en la red
           final Widget networkLogo;
-          if (card.network == 'VISA') {
+          if (networkUpper == 'VISA') {
             networkLogo = Image.asset('assets/images/visa_logo.png', height: 25, fit: BoxFit.contain);
-          } else if (card.network == 'MASTERCARD') {
+          } else if (networkUpper == 'MASTERCARD') {
             networkLogo = Image.asset('assets/images/mastercard_logo.png', height: 40, fit: BoxFit.contain);
           } else {
-            // Muestra el texto si no es Visa o Mastercard
-            networkLogo = Text(card.network.toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic, fontSize: 18));
+            networkLogo = Text(
+              card.network.toUpperCase(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontStyle: FontStyle.italic,
+                fontSize: 18,
+                shadows: [Shadow(color: Colors.black26, offset: Offset(1, 1), blurRadius: 2)],
+              ),
+            );
           }
 
           return Align(
@@ -70,14 +83,54 @@ class WalletTab extends StatelessWidget {
                     ],
                   ),
                   const Spacer(),
-                  Text("**** **** **** ${card.last4Digits}", style: const TextStyle(color: Colors.white, fontSize: 24, letterSpacing: 3, fontFamily: 'monospace')),
+                  Semantics(
+                    label: "Tarjeta terminada en ${card.last4Digits}",
+                    excludeSemantics: true,
+                    child: Text(
+                      "**** **** **** ${card.last4Digits}",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        letterSpacing: 3,
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.bold,
+                        shadows: [
+                          Shadow(color: Colors.black45, offset: Offset(1, 2), blurRadius: 4),
+                        ],
+                      ),
+                    ),
+                  ),
                   const Spacer(),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Expanded(child: Text(card.alias, style: const TextStyle(color: Colors.white70, fontSize: 18), overflow: TextOverflow.ellipsis)),
+                      Expanded(
+                        child: Text(
+                          card.alias,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            shadows: [
+                              Shadow(color: Colors.black26, offset: Offset(1, 1), blurRadius: 2),
+                            ],
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                       const SizedBox(width: 10),
-                      Text("VALID ${card.expiryDate}", style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                      Semantics(
+                        label: "Expira el ${card.expiryDate}",
+                        excludeSemantics: true,
+                        child: Text(
+                          "VALID ${card.expiryDate}",
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
                     ],
                   )
                 ],

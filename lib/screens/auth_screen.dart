@@ -2,12 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive/hive.dart';
 import 'package:pagarless/collections/expense.dart';
-import 'package:pagarless/screens/login_screen.dart';
-
-// Colores del diseño
-const Color colorFondoVerde = Color(0xFF0D704E);
-const Color colorBotonVerde = Color(0xFF00D16B);
-const Color colorFondoInput = Color(0xFFF2F8F5);
+import 'package:pagarless/screens/home_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   final Box<Concepto> expenseBox;
@@ -50,7 +45,7 @@ class _AuthScreenState extends State<AuthScreen> {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (context) => LoginScreen(expenseBox: widget.expenseBox),
+          builder: (context) => MyHomePage(expenseBox: widget.expenseBox),
         ),
       );
     } on AuthException catch (e) {
@@ -70,22 +65,54 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  Future<void> _resetPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ingresa tu correo para la verificacion de tu cuenta'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('¡El Email para recuperar tu cuenta fue enviado a tu correo!')),
+        );
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
   Widget _buildCustomTextField({
     required String hint,
     required TextEditingController controller,
     bool isPassword = false,
     TextInputType keyboardType = TextInputType.text,
   }) {
+    final colorScheme = Theme.of(context).colorScheme;
     return TextField(
       controller: controller,
       obscureText: isPassword,
       keyboardType: keyboardType,
-      style: const TextStyle(color: Colors.black87),
+      style: TextStyle(color: colorScheme.onSurface),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.black26),
+        hintStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.4)),
         filled: true,
-        fillColor: colorFondoInput,
+        fillColor: colorScheme.surfaceContainerHighest,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(20),
           borderSide: BorderSide.none,
@@ -97,8 +124,9 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: colorFondoVerde,
+      backgroundColor: colorScheme.primary,
       body: SafeArea(
         child: Column(
           children: [
@@ -110,14 +138,14 @@ class _AuthScreenState extends State<AuthScreen> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Text(
-                    _isLogin ? 'Welcome Back.' : 'Hello.',
-                    style: const TextStyle(color: Colors.white, fontSize: 18),
+                    _isLogin ? 'Bienvenido de vuelta.' : 'Hola.',
+                    style: TextStyle(color: colorScheme.onPrimary, fontSize: 18),
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    _isLogin ? 'Login to Your Account' : 'Create Your Account',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    _isLogin ? 'Inicia Sesion' : 'Crea tu cuenta',
+                    style: TextStyle(
+                      color: colorScheme.onPrimary,
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
                     ),
@@ -131,7 +159,7 @@ class _AuthScreenState extends State<AuthScreen> {
               child: Container(
                 width: double.infinity,
                 decoration: const BoxDecoration(
-                  color: Colors.white,
+                  color: Colors.white, // Mantenemos blanco para un contraste fuerte en esta pantalla
                   borderRadius: BorderRadius.only(
                     topLeft: Radius.circular(40),
                     topRight: Radius.circular(40),
@@ -143,51 +171,64 @@ class _AuthScreenState extends State<AuthScreen> {
                     children: [
                       const SizedBox(height: 10),
                       Text(
-                        _isLogin ? 'Login' : 'Sign Up',
+                        _isLogin ? 'Iniciar Sesión' : 'Resgistrarse',
                         style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 30),
 
                       // Inputs
                       _buildCustomTextField(
-                        hint: 'Email',
+                        hint: 'Ingresa tu e-mail',
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
                       ),
                       const SizedBox(height: 15),
                       _buildCustomTextField(
-                        hint: 'Password',
+                        hint: 'Ingresa tu Contraseña',
                         controller: _passwordController,
                         isPassword: true,
                       ),
                       if (!_isLogin) ...[
                         const SizedBox(height: 15),
                         _buildCustomTextField(
-                          hint: 'Confirm Password',
+                          hint: 'Confirma tu Contraseña',
                           controller: _confirmPasswordController,
                           isPassword: true,
                         ),
                       ],
+                      if (_isLogin)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: _resetPassword,
+                            child: Text(
+                              '¿Olvidaste tu Contraseña?',
+                              style: TextStyle(
+                                color: colorScheme.primary.withOpacity(0.8),
+                              ),
+                            ),
+                          ),
+                        ),
                       const SizedBox(height: 30),
 
                       // Botón Principal
                       if (_isLoading)
-                        const CircularProgressIndicator(color: colorBotonVerde)
+                        CircularProgressIndicator(color: colorScheme.primary)
                       else
                         ElevatedButton(
                           onPressed: _authenticate,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: colorBotonVerde,
                             minimumSize: const Size(double.infinity, 55),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(30),
                             ),
+                            backgroundColor: colorScheme.primary,
+                            foregroundColor: colorScheme.onPrimary,
                             elevation: 0,
                           ),
                           child: Text(
-                            _isLogin ? 'Login' : 'Sign Up',
-                            style: const TextStyle(
-                              color: Colors.white,
+                            _isLogin ? 'Iniciar Sesión' : 'Registrarse',
+                            style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
@@ -207,9 +248,9 @@ class _AuthScreenState extends State<AuthScreen> {
                         },
                         child: Text(
                           _isLogin
-                              ? 'Don\'t have an account? Sign Up'
-                              : 'Already have an account? Login here',
-                          style: const TextStyle(color: colorBotonVerde, fontWeight: FontWeight.bold),
+                              ? '¿No tines una cuenta? Resgistrate'
+                              : '¿Ya tienes una cuenta? Inicia Sesión aquí',
+                          style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],

@@ -94,6 +94,9 @@ class _ExpensesTabState extends State<ExpensesTab> {
                 Colors.teal.shade400, Colors.pink.shade300
               ];
 
+              // Widget de gráfica
+              Widget chartWidget;
+
               // Renderiza la gráfica según la preferencia del usuario
               if (_chartType == 'bar') {
                 // --- GRÁFICA DE BARRAS ---
@@ -114,7 +117,7 @@ class _ExpensesTabState extends State<ExpensesTab> {
                   );
                 }).toList();
 
-                return BarChart(
+                chartWidget = BarChart(
                   BarChartData(
                     barGroups: barGroups,
                     alignment: BarChartAlignment.spaceAround,
@@ -149,7 +152,7 @@ class _ExpensesTabState extends State<ExpensesTab> {
                   return section;
                 }).toList();
 
-                return PieChart(
+                chartWidget = PieChart(
                   PieChartData(
                     sections: sections,
                     centerSpaceRadius: 40,
@@ -160,6 +163,11 @@ class _ExpensesTabState extends State<ExpensesTab> {
                   ),
                 );
               }
+
+              return Semantics(
+                label: "Gráfico de gastos. Total gastado: \$${totalValue.toStringAsFixed(2)}. Tienes ${groupedExpenses.length} categorías de gastos.",
+                child: chartWidget,
+              );
             },
           ),
         ),

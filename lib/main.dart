@@ -74,9 +74,6 @@ class MyApp extends StatelessWidget {
                 fontFamily: 'Poppins',
                 colorScheme: ColorScheme.fromSeed(
                   seedColor: seedColor,
-                  primary: seedColor,
-                  secondary: seedColor.withOpacity(0.8),
-                  surface: Colors.white,
                   brightness: Brightness.light,
                 ),
                 scaffoldBackgroundColor: const Color(0xFFF4F7F5),
@@ -104,15 +101,7 @@ class MyApp extends StatelessWidget {
                   ),
                 ),
                 elevatedButtonTheme: ElevatedButtonThemeData(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: seedColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(15),
-                    ),
-                    textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
+                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
                 ),
               ),
               // --- TEMA OSCURO ---
@@ -123,21 +112,12 @@ class MyApp extends StatelessWidget {
                 colorScheme: ColorScheme.fromSeed(
                   seedColor: seedColor,
                   brightness: Brightness.dark,
-                  primary: seedColor, 
-                  // secondary: const Color(0xFF81C784), // Dejar que Material 3 genere los variantes
-                  surface: const Color(0xFF121212),
                 ),
                 scaffoldBackgroundColor: const Color(0xFF121212),
                 appBarTheme: const AppBarTheme(
                   backgroundColor: Color(0xFF1E1E1E),
                   foregroundColor: Colors.white,
                   centerTitle: true,
-                ),
-                elevatedButtonTheme: ElevatedButtonThemeData(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: seedColor,
-                    foregroundColor: Colors.black, // Contraste para botón en modo oscuro
-                  ),
                 ),
               ),
               home: SplashScreen(expenseBox: expenseBox),

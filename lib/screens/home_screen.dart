@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Card; // Ocultamos el widget Card para evitar conflicto con tu modelo
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:pagarless/collections/expense.dart';
 import 'package:pagarless/screens/settings_screen.dart';
@@ -9,6 +10,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:pagarless/screens/expenses_tab.dart';
 import 'package:pagarless/screens/savings_tab.dart';
 import 'package:pagarless/screens/wallet_tab.dart';
+import 'package:pagarless/screens/saving_detail_screen.dart';
+import 'package:pagarless/screens/notifications_tab.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class MyHomePage extends StatefulWidget {
   final Box<Concepto> expenseBox;
@@ -22,10 +26,13 @@ class _MyHomePageState extends State<MyHomePage> {
   late PageController _pageController;
   int _selectedIndex = 0;
   
+  final FlutterLocalNotificationsPlugin _notificationsPlugin = FlutterLocalNotificationsPlugin();
+
   // Usamos los nuevos modelos para tener un código más seguro y limpio
   final List<Saving> _savings = [];
   final List<Card> _cards = [];
   final List<Reminder> _reminders = [];
+  final List<Map<String, dynamic>> _notificationsHistory = [];
   // Variables para datos del perfil
   String? _userName;
   String? _avatarUrl;
@@ -34,7 +41,59 @@ class _MyHomePageState extends State<MyHomePage> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _selectedIndex);
+    _initNotifications();
     _loadSupabaseData();
+  }
+
+  Future<void> _initNotifications() async {
+    if (kIsWeb) {
+      debugPrint('Notificaciones locales en Web: Se usará fallback de SnackBar.');
+      return;
+    }
+
+    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const DarwinInitializationSettings iosSettings = DarwinInitializationSettings();
+    
+    const InitializationSettings initSettings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
+
+    await _notificationsPlugin.initialize(initSettings);
+  }
+
+  Future<void> _testLocalNotification(String title, String body) async {
+    if (kIsWeb) {
+      // En Web, mostramos un SnackBar persistente para simular la notificación
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.notifications_active, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(child: Text('[$title] $body')),
+            ],
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Theme.of(context).colorScheme.primary,
+        ),
+      );
+      return;
+    }
+
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'reminders_channel',
+      'Recordatorios',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+      iOS: DarwinNotificationDetails(),
+    );
+
+    await _notificationsPlugin.show(0, title, body, details);
   }
 
   @override
@@ -58,7 +117,42 @@ class _MyHomePageState extends State<MyHomePage> {
       // Cargar Ahorros y Tarjetas desde la nube
       final savingsData = await supabase.from('savings').select().eq('user_id', userId);
       final cardsData = await supabase.from('cards').select().eq('user_id', userId);
-      final remindersData = await supabase.from('reminders').select().eq('user_id', userId);
+      final List<dynamic> rawReminders = await supabase.from('reminders').select().eq('user_id', userId);
+
+      // --- LÓGICA DE LIMPIEZA Y MIGRACIÓN ---
+      final now = DateTime.now();
+      final List<Map<String, dynamic>> activeRemindersData = [];
+
+      for (var reminder in rawReminders) {
+        final map = reminder as Map<String, dynamic>;
+        final isRecurring = map['is_recurring'] as bool? ?? false;
+        bool moved = false;
+
+        if (!isRecurring && map['target_date'] != null) {
+          final targetDate = DateTime.parse(map['target_date']);
+          // Si la fecha ya pasó (ayer o antes)
+          if (targetDate.isBefore(now)) {
+            // 1. Mover al historial
+            await supabase.from('notifications_history').insert({
+              'user_id': userId,
+              'title': map['title'],
+              'amount': map['amount'],
+              'original_date': map['target_date'],
+            });
+            // 2. Eliminar de recordatorios activos
+            await supabase.from('reminders').delete().eq('id', map['id']);
+            moved = true;
+          }
+        }
+        if (!moved) activeRemindersData.add(map);
+      }
+
+      // Cargar el historial actualizado
+      final historyData = await supabase
+          .from('notifications_history')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
 
       // Sincronización de Gastos:
       // Si no tenemos gastos locales (ej. instalación nueva), intentamos bajarlos de la nube.
@@ -81,7 +175,9 @@ class _MyHomePageState extends State<MyHomePage> {
           _cards.clear();
           _cards.addAll(cardsData.map((item) => Card.fromMap(item as Map<String, dynamic>))); // Casteo explícito
           _reminders.clear();
-          _reminders.addAll(remindersData.map((item) => Reminder.fromMap(item as Map<String, dynamic>)));
+          _reminders.addAll(activeRemindersData.map((item) => Reminder.fromMap(item)));
+          _notificationsHistory.clear();
+          _notificationsHistory.addAll(List<Map<String, dynamic>>.from(historyData));
         });
       }
     } catch (e) {
@@ -113,6 +209,7 @@ class _MyHomePageState extends State<MyHomePage> {
     // 2 = Servicio Mensual (Netflix, Luz)
     int selectedType = 0; 
     DateTime? selectedDate = DateTime.now();
+    TimeOfDay selectedTime = const TimeOfDay(hour: 9, minute: 0);
 
     showModalBottomSheet(
       context: context,
@@ -188,6 +285,25 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                 ],
 
+                // Configuración de la hora (Visible para cualquier recordatorio)
+                if (selectedType != 0) ...[
+                  const SizedBox(height: 15),
+                  ListTile(
+                    title: Text("Hora de notificación: ${selectedTime.format(context)}"),
+                    leading: const Icon(Icons.access_time),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Colors.grey)),
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: selectedTime,
+                      );
+                      if (picked != null) {
+                        setModalState(() => selectedTime = picked);
+                      }
+                    },
+                  ),
+                ],
+
                 // Campo condicional: Día del mes (para Servicio Mensual)
                 if (selectedType == 2) ...[
                   const SizedBox(height: 15),
@@ -203,8 +319,13 @@ class _MyHomePageState extends State<MyHomePage> {
                 ElevatedButton(
                   onPressed: () async {
                     final title = titleController.text.trim();
-                    final amount = double.tryParse(amountController.text.trim());
+                    final amountText = amountController.text.trim().replaceAll(',', '.');
+                    final amount = double.tryParse(amountText);
                     final userId = Supabase.instance.client.auth.currentUser?.id;
+                    
+                    // Capturamos variables locales para asegurar promoción de tipos y validez del context
+                    final dateToProcess = selectedDate;
+                    final timeLabel = selectedTime.format(context);
 
                     if (title.isNotEmpty && amount != null && userId != null) {
                       Navigator.pop(context); // Cerrar modal primero
@@ -222,9 +343,20 @@ class _MyHomePageState extends State<MyHomePage> {
                         final isRecurring = selectedType == 2;
                         final dayOfMonth = int.tryParse(dayController.text);
                         
-                        // Validaciones extra
+                        // Validaciones extra con variables locales seguras
                         if (isRecurring && (dayOfMonth == null || dayOfMonth < 1 || dayOfMonth > 31)) return;
-                        if (!isRecurring && selectedDate == null) return;
+                        if (!isRecurring && dateToProcess == null) return;
+
+                        // Combinamos fecha y hora para recordatorios puntuales
+                        final DateTime finalDateTime = !isRecurring 
+                          ? DateTime(
+                              dateToProcess!.year, 
+                              dateToProcess.month, 
+                              dateToProcess.day, 
+                              selectedTime.hour, 
+                              selectedTime.minute
+                            )
+                          : DateTime.now();
 
                         await Supabase.instance.client.from('reminders').insert({
                           'user_id': userId,
@@ -232,9 +364,13 @@ class _MyHomePageState extends State<MyHomePage> {
                           'amount': amount,
                           'is_recurring': isRecurring,
                           'day_of_month': isRecurring ? dayOfMonth : null,
-                          'target_date': !isRecurring ? selectedDate!.toIso8601String() : null,
+                          'target_date': !isRecurring ? finalDateTime.toIso8601String() : null,
+                          'reminder_time': '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}',
                         });
                         
+                        // Test de notificación local al crear
+                        _testLocalNotification('Recordatorio Programado', 'Te avisaremos para pagar $title a las $timeLabel');
+
                         // Recargar datos para ver el nuevo recordatorio
                         _loadSupabaseData();
                       }
@@ -272,7 +408,8 @@ class _MyHomePageState extends State<MyHomePage> {
             ElevatedButton(
               onPressed: () async {
                 final name = nameController.text.trim();
-                final amount = double.tryParse(targetController.text.trim());
+                final amountText = targetController.text.trim().replaceAll(',', '.');
+                final amount = double.tryParse(amountText);
 
                 if (name.isNotEmpty && amount != null) {
                   final newSaving = Saving(name: name, targetAmount: amount, createdAt: DateTime.now());
@@ -287,11 +424,19 @@ class _MyHomePageState extends State<MyHomePage> {
                   final userId = Supabase.instance.client.auth.currentUser?.id;
                   if (userId != null) {
                     try {
-                      await Supabase.instance.client.from('savings').insert({
+                      final response = await Supabase.instance.client.from('savings').insert({
                         'user_id': userId,
                         'name': newSaving.name,
                         'target_amount': newSaving.targetAmount,
-                      });
+                      }).select().single();
+                      
+                      // Actualizamos el ID local con el generado por la base de datos
+                      if (mounted) {
+                        setState(() {
+                          final index = _savings.indexOf(newSaving);
+                          if (index != -1) _savings[index] = Saving.fromMap(response);
+                        });
+                      }
                     } catch (e) {
                       // 3. Si falla, revierte el cambio y muestra un error
                       setState(() {
@@ -458,13 +603,24 @@ class _MyHomePageState extends State<MyHomePage> {
         reminders: _reminders,
         userName: _userName,
       ),
-      SavingsTab(savings: _savings),
+      SavingsTab(
+        savings: _savings,
+        onSavingTapped: (saving) async {
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => SavingDetailScreen(saving: saving),
+            ),
+          );
+          _loadSupabaseData(); // Recarga los datos cuando el usuario regresa
+        },
+      ),
       WalletTab(
         cards: _cards,
         onCardTapped: (card) {
           _showAddExpenseModal(initialTitle: 'Gasto con ${card.alias}');
         },
       ),
+      NotificationsTab(history: _notificationsHistory),
     ];
 
     return Scaffold(
@@ -479,6 +635,13 @@ class _MyHomePageState extends State<MyHomePage> {
                 radius: 18,
               ),
             ),
+          IconButton(
+            icon: const Icon(Icons.notification_important),
+            tooltip: 'Probar Notificación Local',
+            onPressed: () {
+              _testLocalNotification('Prueba Pagarless', '¡Este es un test de recordatorio local!');
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () async {
@@ -546,11 +709,16 @@ class _MyHomePageState extends State<MyHomePage> {
                 selectedIcon: Icon(Icons.wallet),
                 label: 'Wallet',
               ),
+              NavigationDestination(
+                icon: Icon(Icons.notifications_outlined),
+                selectedIcon: Icon(Icons.notifications),
+                label: 'Inbox',
+              ),
             ],
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: _selectedIndex == 3 ? null : FloatingActionButton(
         onPressed: _onFabPressed,
         child: Icon(_selectedIndex == 2 ? Icons.add_card : Icons.add),
       ),
