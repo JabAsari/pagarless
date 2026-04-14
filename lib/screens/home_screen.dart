@@ -334,10 +334,23 @@ class _MyHomePageState extends State<MyHomePage> {
                         // --- CASO 1: GASTO NORMAL ---
                         final now = DateTime.now();
                         final newExpense = Concepto(title: title, amount: amount, date: now);
-                        widget.expenseBox.add(newExpense); // Hive
-                        await Supabase.instance.client.from('expenses').insert({ // Supabase
-                          'user_id': userId, 'title': title, 'amount': amount, 'date': now.toIso8601String(),
-                        });
+                        
+                        try {
+                          await Supabase.instance.client.from('expenses').insert({
+                            'user_id': userId,
+                            'title': title,
+                            'amount': amount,
+                            'date': now.toIso8601String(),
+                          });
+                          widget.expenseBox.add(newExpense); // Solo guardamos en Hive si Supabase acepta (o manejar modo offline)
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error al guardar gasto: $e'), backgroundColor: Colors.red),
+                            );
+                          }
+                          return; // Salimos para no cerrar el modal si falló
+                        }
                       } else {
                         // --- CASO 2 y 3: RECORDATORIOS ---
                         final isRecurring = selectedType == 2;
@@ -358,15 +371,24 @@ class _MyHomePageState extends State<MyHomePage> {
                             )
                           : DateTime.now();
 
-                        await Supabase.instance.client.from('reminders').insert({
-                          'user_id': userId,
-                          'title': title,
-                          'amount': amount,
-                          'is_recurring': isRecurring,
-                          'day_of_month': isRecurring ? dayOfMonth : null,
-                          'target_date': !isRecurring ? finalDateTime.toIso8601String() : null,
-                          'reminder_time': '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}',
-                        });
+                        try {
+                          await Supabase.instance.client.from('reminders').insert({
+                            'user_id': userId,
+                            'title': title,
+                            'amount': amount,
+                            'is_recurring': isRecurring,
+                            'day_of_month': isRecurring ? dayOfMonth : null,
+                            'target_date': !isRecurring ? finalDateTime.toIso8601String() : null,
+                            'reminder_time': '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}',
+                          });
+                        } catch (e) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error al crear recordatorio: $e'), backgroundColor: Colors.red),
+                            );
+                          }
+                          return;
+                        }
                         
                         // Test de notificación local al crear
                         _testLocalNotification('Recordatorio Programado', 'Te avisaremos para pagar $title a las $timeLabel');
