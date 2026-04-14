@@ -184,7 +184,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                       const SizedBox(height: 15),
                       _buildCustomTextField(
-                        hint: 'Ingresa tu Contraseña',
+                        hint: 'Ingresa tu     Contraseña',
                         controller: _passwordController,
                         isPassword: true,
                       ),
