@@ -118,6 +118,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Actualiza el nombre del usuario.
   Future<void> _updateProfile() async {
     final newName = _nameController.text.trim();
+
+    if (newName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('El nombre no puede estar vacío'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    // Validar que no sean solo números
+    if (RegExp(r'^[0-9]+$').hasMatch(newName)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('El nombre puede contener números, pero no puede ser solo números'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
     await _supabase.auth.updateUser(UserAttributes(
       data: {'full_name': newName},
     ));
@@ -368,12 +384,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   leading: Icon(Icons.logout, color: Colors.red.shade400),
                   title: Text('Cerrar Sesión', style: TextStyle(color: Colors.red.shade400)),
                   onTap: () async {
+                    // Limpiamos los datos locales (Hive) para que el siguiente usuario
+                    // no vea la información financiera del usuario anterior.
+                    final expenseBox = Hive.box<Concepto>('expenses');
+                    await expenseBox.clear();
+
                     await _supabase.auth.signOut();
                     if (mounted) {
                       // Usamos pushAndRemoveUntil para limpiar el historial de navegación
                       // y evitar que el usuario pueda volver a la app con el botón de atrás.
                       Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(builder: (context) => AuthScreen(expenseBox: Hive.box<Concepto>('expenses'))),
+                        MaterialPageRoute(builder: (context) => AuthScreen(expenseBox: expenseBox)),
                         (route) => false,
                       );
                     }

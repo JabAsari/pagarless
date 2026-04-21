@@ -16,13 +16,61 @@ class _AuthScreenState extends State<AuthScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController(); // Nuevo para el registro
+  final _nameController = TextEditingController();
   bool _isLoading = false;
   bool _isLogin = false; // Empezar en Registro como en el diseño
 
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
   Future<void> _authenticate() async {
+    final name = _nameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     final confirmPassword = _confirmPasswordController.text.trim();
+
+    // Validar nombre si es registro
+    if (!_isLogin) {
+      if (name.isEmpty) {
+        _showError('Por favor, ingresa tu nombre');
+        return;
+      }
+      if (RegExp(r'^[0-9]+$').hasMatch(name)) {
+        _showError('El nombre puede tener números, pero no puede ser solo números');
+        return;
+      }
+    }
+
+    // 1. Validar formato de Email
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(email)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor, ingresa un correo electrónico válido'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    // 2. Validar complejidad de contraseña (No permitir solo un tipo de caracter)
+    bool hasLetters = password.contains(RegExp(r'[a-zA-Z]'));
+    bool hasNumbers = password.contains(RegExp(r'[0-9]'));
+    bool hasSpecial = password.contains(RegExp(r'[^a-zA-Z0-9]'));
+
+    int typesCount = (hasLetters ? 1 : 0) + (hasNumbers ? 1 : 0) + (hasSpecial ? 1 : 0);
+
+    if (password.length < 6 || typesCount < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('La contraseña debe tener al menos 6 caracteres y ser una mezcla de letras, números o símbolos.'),
+          backgroundColor: Colors.red),
+      );
+      return;
+    }
 
     // Validación básica de contraseñas si es registro
     if (!_isLogin && password != confirmPassword) {
@@ -39,7 +87,11 @@ class _AuthScreenState extends State<AuthScreen> {
       if (_isLogin) {
         await supabase.auth.signInWithPassword(email: email, password: password);
       } else {
-        await supabase.auth.signUp(email: email, password: password);
+        await supabase.auth.signUp(
+          email: email, 
+          password: password,
+          data: {'full_name': name},
+        );
       }
 
       if (!mounted) return;
@@ -63,6 +115,12 @@ class _AuthScreenState extends State<AuthScreen> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
   }
 
   Future<void> _resetPassword() async {
@@ -103,21 +161,25 @@ class _AuthScreenState extends State<AuthScreen> {
     TextInputType keyboardType = TextInputType.text,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    return TextField(
-      controller: controller,
-      obscureText: isPassword,
-      keyboardType: keyboardType,
-      style: TextStyle(color: colorScheme.onSurface),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.4)),
-        filled: true,
-        fillColor: colorScheme.surfaceContainerHighest,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(20),
-          borderSide: BorderSide.none,
+    return Semantics(
+      label: hint,
+      textField: true,
+      child: TextField(
+        controller: controller,
+        obscureText: isPassword,
+        keyboardType: keyboardType,
+        style: TextStyle(color: colorScheme.onSurface),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(color: colorScheme.onSurface.withOpacity(0.4)),
+          filled: true,
+          fillColor: colorScheme.surfaceContainerHighest,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: BorderSide.none,
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       ),
     );
   }
@@ -177,6 +239,13 @@ class _AuthScreenState extends State<AuthScreen> {
                       const SizedBox(height: 30),
 
                       // Inputs
+                      if (!_isLogin) ...[
+                        _buildCustomTextField(
+                          hint: 'Ingresa tu nombre completo',
+                          controller: _nameController,
+                        ),
+                        const SizedBox(height: 15),
+                      ],
                       _buildCustomTextField(
                         hint: 'Ingresa tu e-mail',
                         controller: _emailController,
@@ -242,6 +311,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           setState(() {
                             _isLogin = !_isLogin;
                             _emailController.clear();
+                            _nameController.clear();
                             _passwordController.clear();
                             _confirmPasswordController.clear();
                           });
