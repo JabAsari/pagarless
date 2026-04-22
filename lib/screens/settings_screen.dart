@@ -62,6 +62,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// Muestra un mensaje de éxito al usuario de forma no intrusiva.
+  void _showSuccessMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar(); // Evita que se acumulen mensajes
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   /// Abre la galería para seleccionar una imagen y la sube a Supabase Storage.
   Future<void> _uploadAvatar() async {
     final picker = ImagePicker();
@@ -95,6 +109,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       if (mounted) {
         setState(() => _avatarUrl = imageUrl);
+        _showSuccessMessage('Foto de perfil actualizada con éxito');
       }
     } on StorageException catch (error) {
       if (mounted) {
@@ -126,10 +141,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
-    // Validar que no sean solo números
-    if (RegExp(r'^[0-9]+$').hasMatch(newName)) {
+    // Validación consistente con el registro
+    if (!RegExp(r'^(?=.*[a-zA-ZáéíóúÁÉÍÓÚñÑ])[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s]+$').hasMatch(newName)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El nombre puede contener números, pero no puede ser solo números'), backgroundColor: Colors.red),
+        const SnackBar(content: Text('El nombre debe contener al menos una letra.'), backgroundColor: Colors.red),
       );
       return;
     }
@@ -138,9 +153,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       data: {'full_name': newName},
     ));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Perfil actualizado')),
-      );
+      _showSuccessMessage('Nombre de usuario actualizado con éxito');
       // Devolvemos 'true' para que la pantalla anterior sepa que debe recargar los datos.
       Navigator.pop(context, true);
     }
@@ -152,6 +165,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     themeNotifier.value = mode; // Actualiza el notificador global
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('themeMode', mode.name);
+    _showSuccessMessage('Tema de la aplicación cambiado con éxito');
   }
 
   /// Cambia el tipo de gráfica y guarda la preferencia.
@@ -160,12 +174,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _chartType = type);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('chartType', type);
+    _showSuccessMessage('Tipo de gráfica actualizado con éxito');
   }
 
   Future<void> _changeColor(Color color) async {
     colorNotifier.value = color;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('seedColor', color.value);
+    _showSuccessMessage('Color de acento aplicado con éxito');
   }
 
   // Muestra un diálogo para elegir un color personalizado usando sliders RGB
@@ -384,17 +400,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   leading: Icon(Icons.logout, color: Colors.red.shade400),
                   title: Text('Cerrar Sesión', style: TextStyle(color: Colors.red.shade400)),
                   onTap: () async {
-                    // Limpiamos los datos locales (Hive) para que el siguiente usuario
-                    // no vea la información financiera del usuario anterior.
-                    final expenseBox = Hive.box<Concepto>('expenses');
-                    await expenseBox.clear();
+                    // 1. Cerramos todas las cajas para liberar memoria y archivos
+                    await Hive.close();
+                    
+                    // 2. Eliminamos los datos del disco para aislamiento de usuario
+                    await Hive.deleteBoxFromDisk('expenses');
+                    
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.clear();
 
                     await _supabase.auth.signOut();
+                    
                     if (mounted) {
-                      // Usamos pushAndRemoveUntil para limpiar el historial de navegación
-                      // y evitar que el usuario pueda volver a la app con el botón de atrás.
+                      // 3. Reabrimos la caja (ahora vacía) para pasarla al AuthScreen
+                      final newBox = await Hive.openBox<Concepto>('expenses');
+                      
+                      if (!mounted) return;
+
                       Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(builder: (context) => AuthScreen(expenseBox: expenseBox)),
+                        MaterialPageRoute(builder: (context) => AuthScreen(expenseBox: newBox)),
                         (route) => false,
                       );
                     }

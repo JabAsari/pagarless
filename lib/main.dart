@@ -5,6 +5,7 @@ import 'package:pagarless/collections/expense.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:pagarless/screens/splash_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest.dart' as tz;
 
 // Notificador global para que cualquier parte de la app pueda solicitar un cambio de tema.
 final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.system);
@@ -12,6 +13,7 @@ final ValueNotifier<Color> colorNotifier = ValueNotifier(const Color(0xFF2E7D32)
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  tz.initializeTimeZones();
   
   // Cargar las variables de entorno desde el archivo .env
   await dotenv.load(fileName: ".env");

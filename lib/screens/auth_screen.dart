@@ -17,6 +17,8 @@ class _AuthScreenState extends State<AuthScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController(); // Nuevo para el registro
   final _nameController = TextEditingController();
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   bool _isLoading = false;
   bool _isLogin = false; // Empezar en Registro como en el diseño
 
@@ -41,14 +43,15 @@ class _AuthScreenState extends State<AuthScreen> {
         _showError('Por favor, ingresa tu nombre');
         return;
       }
-      if (RegExp(r'^[0-9]+$').hasMatch(name)) {
-        _showError('El nombre puede tener números, pero no puede ser solo números');
+      // Permite letras, espacios y números opcionales, pero prohíbe que sea SOLO números o caracteres especiales.
+      if (!RegExp(r'^(?=.*[a-zA-ZáéíóúÁÉÍÓÚñÑ])[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s]+$').hasMatch(name)) {
+        _showError('El nombre debe contener al menos una letra y no puede ser puramente numérico.');
         return;
       }
     }
 
     // 1. Validar formato de Email
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    final emailRegex = RegExp(r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$");
     if (!emailRegex.hasMatch(email)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Por favor, ingresa un correo electrónico válido'), backgroundColor: Colors.red),
@@ -117,6 +120,52 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  /// Muestra un diálogo sencillo para verificar el PIN local
+  Future<bool> _showPinVerificationDialog(String correctPin) async {
+    String inputPin = "";
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Verificación de Seguridad'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Ingresa tu PIN de acceso para continuar.'),
+            const SizedBox(height: 20),
+            TextField(
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 24, letterSpacing: 10),
+              onChanged: (v) => inputPin = v,
+              decoration: const InputDecoration(counterText: ""),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (inputPin == correctPin) {
+                Navigator.pop(context, true);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('PIN Incorrecto')),
+                );
+              }
+            },
+            child: const Text('Verificar'),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
@@ -158,6 +207,8 @@ class _AuthScreenState extends State<AuthScreen> {
     required String hint,
     required TextEditingController controller,
     bool isPassword = false,
+    bool obscureText = true,
+    VoidCallback? onToggleVisibility,
     TextInputType keyboardType = TextInputType.text,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -166,7 +217,7 @@ class _AuthScreenState extends State<AuthScreen> {
       textField: true,
       child: TextField(
         controller: controller,
-        obscureText: isPassword,
+        obscureText: isPassword ? obscureText : false,
         keyboardType: keyboardType,
         style: TextStyle(color: colorScheme.onSurface),
         decoration: InputDecoration(
@@ -178,6 +229,15 @@ class _AuthScreenState extends State<AuthScreen> {
             borderRadius: BorderRadius.circular(20),
             borderSide: BorderSide.none,
           ),
+          suffixIcon: isPassword
+              ? IconButton(
+                  icon: Icon(
+                    obscureText ? Icons.visibility_off : Icons.visibility,
+                    color: colorScheme.primary.withOpacity(0.6),
+                  ),
+                  onPressed: onToggleVisibility,
+                )
+              : null,
           contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         ),
       ),
@@ -256,6 +316,8 @@ class _AuthScreenState extends State<AuthScreen> {
                         hint: 'Ingresa tu Contraseña',
                         controller: _passwordController,
                         isPassword: true,
+                        obscureText: _obscurePassword,
+                        onToggleVisibility: () => setState(() => _obscurePassword = !_obscurePassword),
                       ),
                       if (!_isLogin) ...[
                         const SizedBox(height: 15),
@@ -263,6 +325,8 @@ class _AuthScreenState extends State<AuthScreen> {
                           hint: 'Confirma tu Contraseña',
                           controller: _confirmPasswordController,
                           isPassword: true,
+                          obscureText: _obscureConfirmPassword,
+                          onToggleVisibility: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
                         ),
                       ],
                       if (_isLogin)

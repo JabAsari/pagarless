@@ -4,11 +4,13 @@ import 'package:pagarless/collections/card.dart';
 class WalletTab extends StatelessWidget {
   final List<Card> cards;
   final Function(Card card) onCardTapped;
+  final Function(Card card) onDeleteCard;
 
   const WalletTab({
     super.key,
     this.cards = const [],
     required this.onCardTapped,
+    required this.onDeleteCard,
   });
 
   @override
@@ -79,7 +81,17 @@ class WalletTab extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Icon(Icons.nfc, color: Colors.white70, size: 30),
-                      networkLogo,
+                      Row(
+                        children: [
+                          networkLogo,
+                          const SizedBox(width: 10),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.white70),
+                            onPressed: () => onDeleteCard(card),
+                            tooltip: 'Eliminar Tarjeta',
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                   const Spacer(),

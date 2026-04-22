@@ -13,6 +13,8 @@ import 'package:pagarless/screens/wallet_tab.dart';
 import 'package:pagarless/screens/saving_detail_screen.dart';
 import 'package:pagarless/screens/notifications_tab.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/services.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 class MyHomePage extends StatefulWidget {
   final Box<Concepto> expenseBox;
@@ -62,9 +64,8 @@ class _MyHomePageState extends State<MyHomePage> {
     await _notificationsPlugin.initialize(initSettings);
   }
 
-  Future<void> _testLocalNotification(String title, String body) async {
+  Future<void> _testLocalNotification(String title, String body, {DateTime? scheduledDate}) async {
     if (kIsWeb) {
-      // En Web, mostramos un SnackBar persistente para simular la notificación
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
@@ -93,7 +94,68 @@ class _MyHomePageState extends State<MyHomePage> {
       iOS: DarwinNotificationDetails(),
     );
 
-    await _notificationsPlugin.show(0, title, body, details);
+    if (scheduledDate != null) {
+      await _notificationsPlugin.zonedSchedule(
+        DateTime.now().millisecond,
+        title,
+        body,
+        tz.TZDateTime.from(scheduledDate, tz.local),
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    } else {
+      await _notificationsPlugin.show(0, title, body, details);
+    }
+  }
+
+  /// Algoritmo de Luhn para verificar si una tarjeta es matemáticamente válida
+  bool _isLuhnValid(String cardNumber) {
+    cardNumber = cardNumber.replaceAll(RegExp(r'\s+\b|\b\s'), '');
+    int sum = 0;
+    bool alternate = false;
+    for (int i = cardNumber.length - 1; i >= 0; i--) {
+      int n = int.parse(cardNumber[i]);
+      if (alternate) {
+        n *= 2;
+        if (n > 9) n -= 9;
+      }
+      sum += n;
+      alternate = !alternate;
+    }
+    return sum % 10 == 0;
+  }
+
+  /// Elimina una tarjeta tanto de Supabase como del estado local
+  Future<void> _deleteCard(Card card) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Tarjeta'),
+        content: Text('¿Estás seguro de que deseas eliminar "${card.alias}"? Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId != null) {
+        try {
+          await Supabase.instance.client.from('cards').delete().eq('user_id', userId).eq('last_4_digits', card.last4Digits);
+          setState(() {
+            _cards.removeWhere((c) => c.number == card.number);
+          });
+        } catch (e) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al eliminar: $e')));
+        }
+      }
+    }
   }
 
   @override
@@ -103,6 +165,17 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _loadSupabaseData() async {
+    // --- CORRECCIÓN DE SEGURIDAD: Limpiar estados inmediatamente ---
+    // Esto evita que al cambiar de usuario se vea la info del anterior durante la carga.
+    if (mounted) {
+      setState(() {
+        _savings.clear();
+        _cards.clear();
+        _reminders.clear();
+        _notificationsHistory.clear();
+      });
+    }
+
     final supabase = Supabase.instance.client;
     final user = supabase.auth.currentUser;
 
@@ -170,13 +243,9 @@ class _MyHomePageState extends State<MyHomePage> {
 
       if (mounted) {
         setState(() {
-          _savings.clear();
-          _savings.addAll(savingsData.map((item) => Saving.fromMap(item as Map<String, dynamic>))); // Casteo explícito
-          _cards.clear();
-          _cards.addAll(cardsData.map((item) => Card.fromMap(item as Map<String, dynamic>))); // Casteo explícito
-          _reminders.clear();
+          _savings.addAll(savingsData.map((item) => Saving.fromMap(item as Map<String, dynamic>)));
+          _cards.addAll(cardsData.map((item) => Card.fromMap(item as Map<String, dynamic>)));
           _reminders.addAll(activeRemindersData.map((item) => Reminder.fromMap(item)));
-          _notificationsHistory.clear();
           _notificationsHistory.addAll(List<Map<String, dynamic>>.from(historyData));
         });
       }
@@ -210,6 +279,7 @@ class _MyHomePageState extends State<MyHomePage> {
     int selectedType = 0; 
     DateTime? selectedDate = DateTime.now();
     TimeOfDay selectedTime = const TimeOfDay(hour: 9, minute: 0);
+    int leadTimeMinutes = 0; // 0 = Al momento, 15, 60, 1440
 
     showModalBottomSheet(
       context: context,
@@ -256,12 +326,18 @@ class _MyHomePageState extends State<MyHomePage> {
                     prefixIcon: const Icon(Icons.description_outlined)
                   ),
                   textCapitalization: TextCapitalization.sentences,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]')),
+                  ],
                 ),
                 const SizedBox(height: 15),
                 TextField(
                   controller: amountController,
                   decoration: const InputDecoration(labelText: "Monto", prefixIcon: Icon(Icons.attach_money)),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                  ],
                 ),
                 
                 // Campo condicional: Fecha (para Recordatorio Único)
@@ -304,6 +380,25 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                 ],
 
+                // Nuevo selector de Antelación (Solo para recordatorios)
+                if (selectedType != 0) ...[
+                  const SizedBox(height: 15),
+                  DropdownButtonFormField<int>(
+                    value: leadTimeMinutes,
+                    decoration: const InputDecoration(
+                      labelText: "Avisarme antes",
+                      prefixIcon: Icon(Icons.timer_outlined),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 0, child: Text('En el momento')),
+                      DropdownMenuItem(value: 15, child: Text('15 minutos antes')),
+                      DropdownMenuItem(value: 60, child: Text('1 hora antes')),
+                      DropdownMenuItem(value: 1440, child: Text('1 día antes')),
+                    ],
+                    onChanged: (val) => setModalState(() => leadTimeMinutes = val!),
+                  ),
+                ],
+
                 // Campo condicional: Día del mes (para Servicio Mensual)
                 if (selectedType == 2) ...[
                   const SizedBox(height: 15),
@@ -328,6 +423,22 @@ class _MyHomePageState extends State<MyHomePage> {
                     final timeLabel = selectedTime.format(context);
 
                     if (title.isNotEmpty && amount != null && userId != null) {
+                      // Validar que el concepto sea exclusivamente letras
+                      if (!RegExp(r'^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$').hasMatch(title)) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('El concepto solo debe contener letras.'), backgroundColor: Colors.red),
+                        );
+                        return;
+                      }
+
+                      // Validar que el monto no sobrepase los 10 dígitos
+                      if (amountText.replaceAll('.', '').length > 10) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('El monto no puede superar los 10 dígitos.'), backgroundColor: Colors.red),
+                        );
+                        return;
+                      }
+
                       Navigator.pop(context); // Cerrar modal primero
 
                       if (selectedType == 0) {
@@ -390,8 +501,21 @@ class _MyHomePageState extends State<MyHomePage> {
                           return;
                         }
                         
-                        // Test de notificación local al crear
-                        _testLocalNotification('Recordatorio Programado', 'Te avisaremos para pagar $title a las $timeLabel');
+                        // 1. Programamos la notificación real para el futuro con los detalles del recordatorio
+                        if (!isRecurring) {
+                          // Restamos la antelación seleccionada
+                          final scheduledNotificationDate = finalDateTime.subtract(Duration(minutes: leadTimeMinutes));
+                          
+                          _testLocalNotification(
+                            'Pagar $title', 
+                            'Recordatorio: Tienes un pago pendiente de \$${amount.toStringAsFixed(2)}' + 
+                            (leadTimeMinutes > 0 ? ' (En ${leadTimeMinutes >= 60 ? leadTimeMinutes~/60 : leadTimeMinutes} ${leadTimeMinutes >= 60 ? "hora/s" : "minutos"})' : ''), 
+                            scheduledDate: scheduledNotificationDate.isBefore(DateTime.now()) ? DateTime.now().add(const Duration(seconds: 5)) : scheduledNotificationDate
+                          );
+                        }
+
+                        // 2. Notificación inmediata de confirmación para el usuario
+                        _testLocalNotification('Pagarless', 'Recordatorio para "$title" guardado correctamente.');
 
                         // Recargar datos para ver el nuevo recordatorio
                         _loadSupabaseData();
@@ -423,9 +547,22 @@ class _MyHomePageState extends State<MyHomePage> {
           children: [
             Text("Nueva Meta", style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 20),
-            TextField(controller: nameController, decoration: const InputDecoration(labelText: "Nombre de la meta", prefixIcon: Icon(Icons.flag))),
+            TextField(
+              controller: nameController, 
+              decoration: const InputDecoration(labelText: "Nombre de la meta", prefixIcon: Icon(Icons.flag)),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]')),
+              ],
+            ),
             const SizedBox(height: 15),
-            TextField(controller: targetController, decoration: const InputDecoration(labelText: "Monto objetivo", prefixIcon: Icon(Icons.savings)), keyboardType: TextInputType.number),
+            TextField(
+              controller: targetController, 
+              decoration: const InputDecoration(labelText: "Monto objetivo", prefixIcon: Icon(Icons.savings)), 
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+              ],
+            ),
             const SizedBox(height: 25),
             ElevatedButton(
               onPressed: () async {
@@ -434,6 +571,23 @@ class _MyHomePageState extends State<MyHomePage> {
                 final amount = double.tryParse(amountText);
 
                 if (name.isNotEmpty && amount != null) {
+                  // Validar que el nombre de la meta sea exclusivamente letras
+                  if (!RegExp(r'^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$').hasMatch(name)) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('El nombre de la meta solo debe contener letras.'), backgroundColor: Colors.red),
+                    );
+                    return;
+                  }
+
+                  // Validar que el monto no sobrepase los 10 dígitos (Contando solo números)
+                  final digitCount = amountText.replaceAll(RegExp(r'[^0-9]'), '').length;
+                  if (digitCount > 10) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('El monto no puede superar los 10 dígitos.'), backgroundColor: Colors.red),
+                    );
+                    return;
+                  }
+
                   final newSaving = Saving(name: name, targetAmount: amount, createdAt: DateTime.now());
 
                   // 1. Actualiza la UI inmediatamente (Optimistic Update)
@@ -501,8 +655,11 @@ class _MyHomePageState extends State<MyHomePage> {
                 Text("Agregar Tarjeta", style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 20),
                 TextField(
-                  controller: aliasController, 
-                  decoration: const InputDecoration(labelText: "Alias (Ej. Nómina)", prefixIcon: Icon(Icons.label_outline))
+                  controller: aliasController,
+                  decoration: const InputDecoration(labelText: "Alias (Ej. Nómina)", prefixIcon: Icon(Icons.label_outline)),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]')),
+                  ],
                 ),
                 const SizedBox(height: 15),
                 
@@ -538,9 +695,13 @@ class _MyHomePageState extends State<MyHomePage> {
                     Expanded(
                       child: TextField(
                         controller: expiryController,
-                        decoration: const InputDecoration(labelText: "Vigencia (MM/YY)", prefixIcon: Icon(Icons.calendar_today)),
-                        keyboardType: TextInputType.datetime,
-                        maxLength: 5,
+                        decoration: const InputDecoration(labelText: "Vigencia (MM/AA)", prefixIcon: Icon(Icons.calendar_today), hintText: "MM/AA"),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(4),
+                          _CardExpiryInputFormatter(),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 15),
@@ -563,6 +724,14 @@ class _MyHomePageState extends State<MyHomePage> {
                     final number = numberController.text.trim();
                     final expiry = expiryController.text.trim();
                     final cvc = cvcController.text.trim();
+
+                    // Validar existencia matemática de la tarjeta
+                    if (!_isLuhnValid(number)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('El número de tarjeta no es válido (Fallo de verificación bancaria)'), backgroundColor: Colors.red),
+                      );
+                      return;
+                    }
 
                     if (alias.isNotEmpty && number.length >= 13 && expiry.isNotEmpty && cvc.length == 3) {
                       final last4 = number.substring(number.length - 4);
@@ -641,6 +810,7 @@ class _MyHomePageState extends State<MyHomePage> {
         onCardTapped: (card) {
           _showAddExpenseModal(initialTitle: 'Gasto con ${card.alias}');
         },
+        onDeleteCard: _deleteCard,
       ),
       NotificationsTab(history: _notificationsHistory),
     ];
@@ -659,9 +829,9 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
           IconButton(
             icon: const Icon(Icons.notification_important),
-            tooltip: 'Probar Notificación Local',
+            tooltip: 'Modo Desarrollador: Probar Notificación',
             onPressed: () {
-              _testLocalNotification('Prueba Pagarless', '¡Este es un test de recordatorio local!');
+              _testLocalNotification('Test de Sistema', 'Verificación de que el servicio de alertas está activo.');
             },
           ),
           IconButton(
@@ -744,6 +914,29 @@ class _MyHomePageState extends State<MyHomePage> {
         onPressed: _onFabPressed,
         child: Icon(_selectedIndex == 2 ? Icons.add_card : Icons.add),
       ),
+    );
+  }
+}
+
+class _CardExpiryInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    var text = newValue.text;
+    if (newValue.selection.baseOffset == 0) return newValue;
+    
+    var buffer = StringBuffer();
+    for (int i = 0; i < text.length; i++) {
+      buffer.write(text[i]);
+      var nonZeroIndex = i + 1;
+      if (nonZeroIndex % 2 == 0 && nonZeroIndex != text.length) {
+        buffer.write('/');
+      }
+    }
+    
+    var string = buffer.toString();
+    return newValue.copyWith(
+      text: string,
+      selection: TextSelection.collapsed(offset: string.length),
     );
   }
 }
