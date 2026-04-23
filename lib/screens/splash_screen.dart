@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:hive/hive.dart';
 import 'package:pagarless/collections/expense.dart';
 import 'package:pagarless/screens/auth_screen.dart';
+import 'package:pagarless/screens/pin_verification_screen.dart';
 import 'package:pagarless/screens/home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -29,12 +30,20 @@ class _SplashScreenState extends State<SplashScreen> {
     // Verificamos si hay una sesión activa en Supabase
     final session = Supabase.instance.client.auth.currentSession;
 
+    Widget nextScreen;
+    if (session != null) {
+      final userPin = session.user.userMetadata?['user_pin'] as String?;
+      if (userPin != null && userPin.isNotEmpty) {
+        nextScreen = PinVerificationScreen(correctPin: userPin, expenseBox: widget.expenseBox);
+      } else {
+        nextScreen = MyHomePage(expenseBox: widget.expenseBox);
+      }
+    } else {
+      nextScreen = AuthScreen(expenseBox: widget.expenseBox);
+    }
+
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (context) => session != null
-            ? MyHomePage(expenseBox: widget.expenseBox)
-            : AuthScreen(expenseBox: widget.expenseBox),
-      ),
+      MaterialPageRoute(builder: (context) => nextScreen),
     );
   }
 
@@ -50,7 +59,12 @@ class _SplashScreenState extends State<SplashScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // Logo o Icono de la App
-            const Icon(Icons.account_balance_wallet, size: 100, color: Colors.white),
+            Container(
+              width: 150,
+              height: 150,
+              decoration: const BoxDecoration(boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 20, offset: Offset(0,10))]),
+              child: Image.asset('assets/images/app_icon.png', fit: BoxFit.contain),
+            ),
             const SizedBox(height: 20),
             // Nombre de la App
             const Text(

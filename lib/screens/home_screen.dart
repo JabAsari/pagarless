@@ -11,6 +11,7 @@ import 'package:pagarless/screens/expenses_tab.dart';
 import 'package:pagarless/screens/savings_tab.dart';
 import 'package:pagarless/screens/wallet_tab.dart';
 import 'package:pagarless/screens/saving_detail_screen.dart';
+import 'package:pagarless/screens/pin_verification_screen.dart';
 import 'package:pagarless/screens/notifications_tab.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/services.dart';
@@ -24,7 +25,7 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   late PageController _pageController;
   int _selectedIndex = 0;
   
@@ -42,6 +43,7 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pageController = PageController(initialPage: _selectedIndex);
     _initNotifications();
     _loadSupabaseData();
@@ -126,6 +128,28 @@ class _MyHomePageState extends State<MyHomePage> {
     return sum % 10 == 0;
   }
 
+  /// Muestra un SnackBar de error que es visible incluso con modales abiertos.
+  void _showErrorSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, textAlign: TextAlign.center),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+        elevation: 10,
+        margin: const EdgeInsets.only(
+          bottom: 100, // Ajustado para flotar sobre la barra de navegación personalizada
+          left: 20,
+          right: 20,
+        ),
+        dismissDirection: DismissDirection.down,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
   /// Elimina una tarjeta tanto de Supabase como del estado local
   Future<void> _deleteCard(Card card) async {
     final confirmed = await showDialog<bool>(
@@ -152,14 +176,35 @@ class _MyHomePageState extends State<MyHomePage> {
             _cards.removeWhere((c) => c.number == card.number);
           });
         } catch (e) {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al eliminar: $e')));
+          _showErrorSnackBar('Error al eliminar: $e');
         }
       }
     }
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Si la app vuelve al primer plano y el usuario tiene un PIN configurado
+    if (state == AppLifecycleState.resumed) {
+      final user = Supabase.instance.client.auth.currentUser;
+      final userPin = user?.userMetadata?['user_pin'] as String?;
+      
+      if (userPin != null && userPin.isNotEmpty) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => PinVerificationScreen(
+              correctPin: userPin, 
+              expenseBox: widget.expenseBox
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     super.dispose();
   }
@@ -273,6 +318,10 @@ class _MyHomePageState extends State<MyHomePage> {
     final amountController = TextEditingController();
     final dayController = TextEditingController(); // Para día del mes (1-31)
     
+    String? titleError;
+    String? amountError;
+    String? dayError;
+
     // 0 = Gasto Ya Realizado
     // 1 = Recordatorio Pago Único (Fiesta, Cooperación)
     // 2 = Servicio Mensual (Netflix, Luz)
@@ -323,7 +372,8 @@ class _MyHomePageState extends State<MyHomePage> {
                   controller: titleController,
                   decoration: InputDecoration(
                     labelText: selectedType == 0 ? "Concepto" : "Título del recordatorio",
-                    prefixIcon: const Icon(Icons.description_outlined)
+                    prefixIcon: const Icon(Icons.description_outlined),
+                    errorText: titleError,
                   ),
                   textCapitalization: TextCapitalization.sentences,
                   inputFormatters: [
@@ -333,7 +383,11 @@ class _MyHomePageState extends State<MyHomePage> {
                 const SizedBox(height: 15),
                 TextField(
                   controller: amountController,
-                  decoration: const InputDecoration(labelText: "Monto", prefixIcon: Icon(Icons.attach_money)),
+                  decoration: InputDecoration(
+                    labelText: "Monto", 
+                    prefixIcon: const Icon(Icons.attach_money),
+                    errorText: amountError,
+                  ),
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
@@ -404,7 +458,11 @@ class _MyHomePageState extends State<MyHomePage> {
                   const SizedBox(height: 15),
                   TextField(
                     controller: dayController,
-                    decoration: const InputDecoration(labelText: "Día de pago (1-31)", prefixIcon: Icon(Icons.calendar_view_day)),
+                    decoration: InputDecoration(
+                      labelText: "Día de pago (1-31)", 
+                      prefixIcon: const Icon(Icons.calendar_view_day),
+                      errorText: dayError,
+                    ),
                     keyboardType: TextInputType.number,
                     maxLength: 2,
                   ),
@@ -422,20 +480,22 @@ class _MyHomePageState extends State<MyHomePage> {
                     final dateToProcess = selectedDate;
                     final timeLabel = selectedTime.format(context);
 
+                    setModalState(() {
+                      titleError = null;
+                      amountError = null;
+                      dayError = null;
+                    });
+
                     if (title.isNotEmpty && amount != null && userId != null) {
                       // Validar que el concepto sea exclusivamente letras
                       if (!RegExp(r'^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$').hasMatch(title)) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('El concepto solo debe contener letras.'), backgroundColor: Colors.red),
-                        );
+                        setModalState(() => titleError = 'El concepto solo debe contener letras.');
                         return;
                       }
 
                       // Validar que el monto no sobrepase los 10 dígitos
                       if (amountText.replaceAll('.', '').length > 10) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('El monto no puede superar los 10 dígitos.'), backgroundColor: Colors.red),
-                        );
+                        setModalState(() => amountError = 'El monto no puede superar los 10 dígitos.');
                         return;
                       }
 
@@ -455,11 +515,7 @@ class _MyHomePageState extends State<MyHomePage> {
                           });
                           widget.expenseBox.add(newExpense); // Solo guardamos en Hive si Supabase acepta (o manejar modo offline)
                         } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error al guardar gasto: $e'), backgroundColor: Colors.red),
-                            );
-                          }
+                          _showErrorSnackBar('Error al guardar gasto: $e');
                           return; // Salimos para no cerrar el modal si falló
                         }
                       } else {
@@ -468,7 +524,10 @@ class _MyHomePageState extends State<MyHomePage> {
                         final dayOfMonth = int.tryParse(dayController.text);
                         
                         // Validaciones extra con variables locales seguras
-                        if (isRecurring && (dayOfMonth == null || dayOfMonth < 1 || dayOfMonth > 31)) return;
+                        if (isRecurring && (dayOfMonth == null || dayOfMonth < 1 || dayOfMonth > 31)) {
+                          setModalState(() => dayError = 'Día inválido (1-31)');
+                          return;
+                        }
                         if (!isRecurring && dateToProcess == null) return;
 
                         // Combinamos fecha y hora para recordatorios puntuales
@@ -493,11 +552,7 @@ class _MyHomePageState extends State<MyHomePage> {
                             'reminder_time': '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}',
                           });
                         } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error al crear recordatorio: $e'), backgroundColor: Colors.red),
-                            );
-                          }
+                          _showErrorSnackBar('Error al crear recordatorio: $e');
                           return;
                         }
                         
@@ -573,18 +628,14 @@ class _MyHomePageState extends State<MyHomePage> {
                 if (name.isNotEmpty && amount != null) {
                   // Validar que el nombre de la meta sea exclusivamente letras
                   if (!RegExp(r'^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$').hasMatch(name)) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('El nombre de la meta solo debe contener letras.'), backgroundColor: Colors.red),
-                    );
+                    _showErrorSnackBar('El nombre de la meta solo debe contener letras.');
                     return;
                   }
 
                   // Validar que el monto no sobrepase los 10 dígitos (Contando solo números)
                   final digitCount = amountText.replaceAll(RegExp(r'[^0-9]'), '').length;
                   if (digitCount > 10) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('El monto no puede superar los 10 dígitos.'), backgroundColor: Colors.red),
-                    );
+                    _showErrorSnackBar('El monto no puede superar los 10 dígitos.');
                     return;
                   }
 
@@ -618,10 +669,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       setState(() {
                         _savings.remove(newSaving);
                       });
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text('Error al guardar: ${e.toString()}'), backgroundColor: Colors.red));
-                      }
+                    _showErrorSnackBar('Error al guardar: ${e.toString()}');
                     }
                   }
                 }
@@ -640,6 +688,10 @@ class _MyHomePageState extends State<MyHomePage> {
     final expiryController = TextEditingController();
     final cvcController = TextEditingController();
     String detectedNetwork = "Desconocida";
+    String? aliasError;
+    String? numberError;
+    String? expiryError;
+    String? cvcError;
 
     showModalBottomSheet(
       context: context,
@@ -656,7 +708,11 @@ class _MyHomePageState extends State<MyHomePage> {
                 const SizedBox(height: 20),
                 TextField(
                   controller: aliasController,
-                  decoration: const InputDecoration(labelText: "Alias (Ej. Nómina)", prefixIcon: Icon(Icons.label_outline)),
+                  decoration: InputDecoration(
+                    labelText: "Alias (Ej. Nómina)", 
+                    prefixIcon: const Icon(Icons.label_outline),
+                    errorText: aliasError,
+                  ),
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]')),
                   ],
@@ -668,6 +724,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   controller: numberController,
                   decoration: InputDecoration(
                     labelText: "Número de Tarjeta", 
+                    errorText: numberError,
                     prefixIcon: const Icon(Icons.credit_card),
                     suffixIcon: Padding(
                       padding: const EdgeInsets.all(10.0),
@@ -695,7 +752,12 @@ class _MyHomePageState extends State<MyHomePage> {
                     Expanded(
                       child: TextField(
                         controller: expiryController,
-                        decoration: const InputDecoration(labelText: "Vigencia (MM/AA)", prefixIcon: Icon(Icons.calendar_today), hintText: "MM/AA"),
+                        decoration: InputDecoration(
+                          labelText: "Vigencia (MM/AA)", 
+                          prefixIcon: const Icon(Icons.calendar_today), 
+                          hintText: "MM/AA",
+                          errorText: expiryError,
+                        ),
                         keyboardType: TextInputType.number,
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
@@ -708,7 +770,11 @@ class _MyHomePageState extends State<MyHomePage> {
                     Expanded(
                       child: TextField(
                         controller: cvcController,
-                        decoration: const InputDecoration(labelText: "CVC", prefixIcon: Icon(Icons.lock_outline)),
+                        decoration: InputDecoration(
+                          labelText: "CVC", 
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          errorText: cvcError,
+                        ),
                         keyboardType: TextInputType.number,
                         maxLength: 3,
                         obscureText: true,
@@ -725,11 +791,34 @@ class _MyHomePageState extends State<MyHomePage> {
                     final expiry = expiryController.text.trim();
                     final cvc = cvcController.text.trim();
 
+                    setModalState(() {
+                      aliasError = null;
+                      numberError = null;
+                      expiryError = null;
+                      cvcError = null;
+                    });
+
+                    // Validaciones básicas
+                    if (alias.isEmpty) {
+                      setModalState(() => aliasError = 'Ingresa un alias');
+                      return;
+                    }
+                    if (number.length < 13) {
+                      setModalState(() => numberError = 'Número incompleto');
+                      return;
+                    }
+                    if (expiry.length < 5) {
+                      setModalState(() => expiryError = 'Formato MM/AA');
+                      return;
+                    }
+                    if (cvc.length < 3) {
+                      setModalState(() => cvcError = 'CVC inválido');
+                      return;
+                    }
+
                     // Validar existencia matemática de la tarjeta
                     if (!_isLuhnValid(number)) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('El número de tarjeta no es válido (Fallo de verificación bancaria)'), backgroundColor: Colors.red),
-                      );
+                      setModalState(() => numberError = 'Número de tarjeta no válido');
                       return;
                     }
 
@@ -768,10 +857,7 @@ class _MyHomePageState extends State<MyHomePage> {
                           setState(() {
                             _cards.remove(newCard);
                           });
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                content: Text('Error al guardar: ${e.toString()}'), backgroundColor: Colors.red));
-                          }
+                          _showErrorSnackBar('Error al guardar: ${e.toString()}');
                         }
                       }
                     }

@@ -20,6 +20,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _avatarUrl;
   bool _isLoading = true;
   String _chartType = 'pie';
+  String? _nameError;
+  String? _currentPin;
   
   final List<Map<String, dynamic>> _availableColors = [
     {'color': const Color(0xFF2E7D32), 'name': 'Verde Bosque'},
@@ -56,6 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     _chartType = prefs.getString('chartType') ?? 'pie';
+    _currentPin = user?.userMetadata?['user_pin'] as String?; // Cargar PIN desde Supabase
 
     if (mounted) {
       setState(() => _isLoading = false);
@@ -68,10 +71,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ScaffoldMessenger.of(context).hideCurrentSnackBar(); // Evita que se acumulen mensajes
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Text(message, textAlign: TextAlign.center),
         backgroundColor: Theme.of(context).colorScheme.primary,
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+        elevation: 10,
+        margin: const EdgeInsets.only(
+          bottom: 20,
+          left: 20,
+          right: 20,
+        ),
+        dismissDirection: DismissDirection.down,
         duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  /// Muestra un mensaje de error persistente.
+  void _showErrorMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, textAlign: TextAlign.center),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+        elevation: 10,
+        margin: const EdgeInsets.only(
+          bottom: 20,
+          left: 20,
+          right: 20,
+        ),
+        dismissDirection: DismissDirection.down,
       ),
     );
   }
@@ -112,17 +144,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _showSuccessMessage('Foto de perfil actualizada con éxito');
       }
     } on StorageException catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error.message), backgroundColor: Colors.red),
-        );
-      }
+      _showErrorMessage(error.message);
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error inesperado'), backgroundColor: Colors.red),
-        );
-      }
+      _showErrorMessage('Error inesperado');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -134,18 +158,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _updateProfile() async {
     final newName = _nameController.text.trim();
 
+    setState(() => _nameError = null);
+
     if (newName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El nombre no puede estar vacío'), backgroundColor: Colors.red),
-      );
+      setState(() => _nameError = 'El nombre no puede estar vacío');
       return;
     }
 
     // Validación consistente con el registro
     if (!RegExp(r'^(?=.*[a-zA-ZáéíóúÁÉÍÓÚñÑ])[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s]+$').hasMatch(newName)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El nombre debe contener al menos una letra.'), backgroundColor: Colors.red),
-      );
+      setState(() => _nameError = 'Debe contener letras y no ser solo números.');
       return;
     }
 
@@ -182,6 +204,103 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('seedColor', color.value);
     _showSuccessMessage('Color de acento aplicado con éxito');
+  }
+
+  /// Abre un diálogo para configurar o cambiar el PIN.
+  Future<void> _showSetPinDialog() async {
+    final pinController1 = TextEditingController();
+    final pinController2 = TextEditingController();
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(_currentPin == null ? 'Configurar PIN' : 'Cambiar PIN'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: pinController1,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              decoration: const InputDecoration(labelText: 'Nuevo PIN (4 dígitos)'),
+            ),
+            TextField(
+              controller: pinController2,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              decoration: const InputDecoration(labelText: 'Confirmar nuevo PIN'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () async {
+              if (pinController1.text.length == 4 && pinController1.text == pinController2.text) {
+                // Guardar PIN en Supabase user_metadata
+                await _supabase.auth.updateUser(UserAttributes(data: {'user_pin': pinController1.text}));
+                setState(() => _currentPin = pinController1.text);
+                if (mounted) {
+                  Navigator.pop(context);
+                  _showSuccessMessage('PIN guardado con éxito');
+                }
+              } else {
+                _showErrorMessage('Los PIN deben coincidir y tener 4 dígitos');
+              }
+            },
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Abre un diálogo para validar el PIN actual y eliminarlo.
+  Future<void> _showRemovePinDialog() async {
+    final pinController = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Desactivar PIN'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Ingresa tu PIN actual para desactivar la seguridad.'),
+            const SizedBox(height: 15),
+            TextField(
+              controller: pinController,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(hintText: '****'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            onPressed: () async {
+              if (pinController.text == _currentPin) {
+                // Eliminar PIN de Supabase user_metadata
+                await _supabase.auth.updateUser(UserAttributes(data: {'user_pin': null}));
+                setState(() => _currentPin = null);
+                if (mounted) {
+                  Navigator.pop(context);
+                  _showSuccessMessage('PIN eliminado con éxito');
+                }
+              } else {
+                _showErrorMessage('PIN incorrecto');
+              }
+            },
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
   }
 
   // Muestra un diálogo para elegir un color personalizado usando sliders RGB
@@ -307,7 +426,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 20),
                 TextField(
                   controller: _nameController,
-                  decoration: const InputDecoration(labelText: 'Nombre de usuario'),
+                  decoration: InputDecoration(
+                    labelText: 'Nombre de usuario',
+                    errorText: _nameError,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 ElevatedButton(
@@ -390,6 +512,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                 ),
+
+                const Divider(height: 40),
+
+                // --- SECCIÓN DE SEGURIDAD ---
+                Text('Seguridad', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 10),
+                ListTile(
+                  leading: const Icon(Icons.lock_outline),
+                  title: const Text('PIN de seguridad'),
+                  subtitle: Text(_currentPin == null ? 'Desactivado' : 'Activado'),
+                  trailing: Switch(
+                    value: _currentPin != null,
+                    onChanged: (bool value) {
+                      if (value) {
+                        _showSetPinDialog();
+                      } else {
+                        _showRemovePinDialog();
+                      }
+                    },
+                  ),
+                ),
+                if (_currentPin != null)
+                  ListTile(
+                    leading: const Icon(Icons.password_outlined),
+                    title: const Text('Cambiar mi PIN'),
+                    onTap: _showSetPinDialog,
+                  ),
 
                 const Divider(height: 40),
 

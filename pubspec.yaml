@@ -46,6 +46,7 @@ dependencies:
   image_picker: ^1.1.2
   flutter_local_notifications: ^17.0.0
   timezone: ^0.9.2
+  flutter_launcher_icons: "^0.13.1"
 
 dev_dependencies:
   flutter_test:
@@ -86,3 +87,11 @@ flutter:
           style: italic
         - asset: assets/fonts/Poppins-Bold.ttf
           weight: 700
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/app_icon.png"
+  adaptive_icon_background: "#2E7D32" # El color verde de tu app
+  adaptive_icon_foreground: "assets/images/app_icon.png"
+

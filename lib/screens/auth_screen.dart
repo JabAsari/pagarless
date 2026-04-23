@@ -39,22 +39,26 @@ class _AuthScreenState extends State<AuthScreen> {
 
     // Validar nombre si es registro
     if (!_isLogin) {
-      if (name.isEmpty) {
-        _showError('Por favor, ingresa tu nombre');
+      if (name.isEmpty) { 
+        ScaffoldMessenger.of(context).showSnackBar(
+          _buildStyledSnackBar('Por favor, ingresa tu nombre', Colors.red),
+        );
         return;
       }
       // Permite letras, espacios y números opcionales, pero prohíbe que sea SOLO números o caracteres especiales.
       if (!RegExp(r'^(?=.*[a-zA-ZáéíóúÁÉÍÓÚñÑ])[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s]+$').hasMatch(name)) {
-        _showError('El nombre debe contener al menos una letra y no puede ser puramente numérico.');
+        ScaffoldMessenger.of(context).showSnackBar(
+          _buildStyledSnackBar('El nombre debe contener al menos una letra y no puede ser puramente numérico.', Colors.red),
+        );
         return;
-      }
+      } 
     }
 
     // 1. Validar formato de Email
     final emailRegex = RegExp(r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$");
     if (!emailRegex.hasMatch(email)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor, ingresa un correo electrónico válido'), backgroundColor: Colors.red),
+        _buildStyledSnackBar('Por favor, ingresa un correo electrónico válido', Colors.red),
       );
       return;
     }
@@ -68,9 +72,8 @@ class _AuthScreenState extends State<AuthScreen> {
 
     if (password.length < 6 || typesCount < 2) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('La contraseña debe tener al menos 6 caracteres y ser una mezcla de letras, números o símbolos.'),
-          backgroundColor: Colors.red),
+        _buildStyledSnackBar('La contraseña debe tener al menos 6 caracteres y ser una mezcla de letras, números o símbolos.',
+          Colors.red),
       );
       return;
     }
@@ -78,7 +81,7 @@ class _AuthScreenState extends State<AuthScreen> {
     // Validación básica de contraseñas si es registro
     if (!_isLogin && password != confirmPassword) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Las contraseñas no coinciden'), backgroundColor: Colors.red),
+        _buildStyledSnackBar('Las contraseñas no coinciden', Colors.red),
       );
       return;
     }
@@ -93,7 +96,8 @@ class _AuthScreenState extends State<AuthScreen> {
         await supabase.auth.signUp(
           email: email, 
           password: password,
-          data: {'full_name': name},
+          // Al registrar, el PIN se inicializa como nulo. El usuario lo configurará después.
+          data: {'full_name': name, 'user_pin': null}, 
         );
       }
 
@@ -106,12 +110,12 @@ class _AuthScreenState extends State<AuthScreen> {
     } on AuthException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message), backgroundColor: Colors.red),
+        _buildStyledSnackBar(e.message, Colors.red),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ocurrió un error inesperado'), backgroundColor: Colors.red),
+        _buildStyledSnackBar('Ocurrió un error inesperado', Colors.red),
       );
     } finally {
       if (mounted) {
@@ -119,59 +123,20 @@ class _AuthScreenState extends State<AuthScreen> {
       }
     }
   }
-
-  /// Muestra un diálogo sencillo para verificar el PIN local
-  Future<bool> _showPinVerificationDialog(String correctPin) async {
-    String inputPin = "";
-    return await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Verificación de Seguridad'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Ingresa tu PIN de acceso para continuar.'),
-            const SizedBox(height: 20),
-            TextField(
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              maxLength: 4,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 24, letterSpacing: 10),
-              onChanged: (v) => inputPin = v,
-              decoration: const InputDecoration(counterText: ""),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (inputPin == correctPin) {
-                Navigator.pop(context, true);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('PIN Incorrecto')),
-                );
-              }
-            },
-            child: const Text('Verificar'),
-          ),
-        ],
-      ),
-    ) ?? false;
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+  
+  SnackBar _buildStyledSnackBar(String message, Color backgroundColor) {
+    return SnackBar(
+      content: Text(message, textAlign: TextAlign.center),
+      backgroundColor: backgroundColor,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+      elevation: 10,
+      margin: const EdgeInsets.only(bottom: 20, left: 20, right: 20),
+      dismissDirection: DismissDirection.down,
     );
   }
 
+  // This method is fine, it uses SnackBar directly.
   Future<void> _resetPassword() async {
     final email = _emailController.text.trim();
     if (email.isEmpty) {
