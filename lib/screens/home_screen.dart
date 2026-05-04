@@ -438,7 +438,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
                 if (selectedType != 0) ...[
                   const SizedBox(height: 15),
                   DropdownButtonFormField<int>(
-                    value: leadTimeMinutes,
+                    initialValue: leadTimeMinutes,
                     decoration: const InputDecoration(
                       labelText: "Avisarme antes",
                       prefixIcon: Icon(Icons.timer_outlined),
@@ -563,8 +563,7 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
                           
                           _testLocalNotification(
                             'Pagar $title', 
-                            'Recordatorio: Tienes un pago pendiente de \$${amount.toStringAsFixed(2)}' + 
-                            (leadTimeMinutes > 0 ? ' (En ${leadTimeMinutes >= 60 ? leadTimeMinutes~/60 : leadTimeMinutes} ${leadTimeMinutes >= 60 ? "hora/s" : "minutos"})' : ''), 
+                            'Recordatorio: Tienes un pago pendiente de \$${amount.toStringAsFixed(2)}${leadTimeMinutes > 0 ? ' (En ${leadTimeMinutes >= 60 ? leadTimeMinutes~/60 : leadTimeMinutes} ${leadTimeMinutes >= 60 ? "hora/s" : "minutos"})' : ''}', 
                             scheduledDate: scheduledNotificationDate.isBefore(DateTime.now()) ? DateTime.now().add(const Duration(seconds: 5)) : scheduledNotificationDate
                           );
                         }

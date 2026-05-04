@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:hive/hive.dart';
 import 'package:pagarless/collections/expense.dart';
 import 'package:pagarless/screens/home_screen.dart';
@@ -350,6 +351,25 @@ class _AuthScreenState extends State<AuthScreen> {
                               ? '¿No tines una cuenta? Resgistrate'
                               : '¿Ya tienes una cuenta? Inicia Sesión aquí',
                           style: TextStyle(color: colorScheme.primary, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextButton(
+                        onPressed: () async {
+                          final url = Uri.parse('https://manualito.vercel.app/');
+                          try {
+                            await launchUrl(url, mode: LaunchMode.externalApplication);
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                _buildStyledSnackBar('No se pudo abrir el enlace de ayuda', Colors.orange),
+                              );
+                            }
+                          }
+                        },
+                        child: Text(
+                          '¿Necesitas ayuda en algo?',
+                          style: TextStyle(color: colorScheme.primary.withOpacity(0.6), fontSize: 13),
                         ),
                       ),
                     ],

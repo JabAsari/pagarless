@@ -40,6 +40,7 @@ dependencies:
   path_provider: ^2.1.1
   supabase_flutter: ^2.8.0
   flutter_secure_storage: ^9.0.0
+  url_launcher: ^6.2.5
   flutter_dotenv: ^5.1.0
   fl_chart: ^0.68.0
   shared_preferences: ^2.2.3
@@ -94,4 +95,3 @@ flutter_launcher_icons:
   image_path: "assets/images/app_icon.png"
   adaptive_icon_background: "#2E7D32" # El color verde de tu app
   adaptive_icon_foreground: "assets/images/app_icon.png"
-

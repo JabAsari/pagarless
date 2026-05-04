@@ -4,6 +4,7 @@ import 'package:pagarless/main.dart';
 import 'package:pagarless/screens/auth_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:pagarless/collections/expense.dart';
 
@@ -545,6 +546,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 // --- SECCIÓN DE CUENTA ---
                 Text('Cuenta', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 10),
+                ListTile(
+                  leading: const Icon(Icons.help_outline),
+                  title: const Text('¿Necesitas ayuda en algo?'),
+                  subtitle: const Text('Visita nuestro centro de soporte'),
+                  onTap: () async {
+                    final url = Uri.parse('https://manualito.vercel.app/');
+                    try {
+                      await launchUrl(url, mode: LaunchMode.externalApplication);
+                    } catch (e) {
+                      _showErrorMessage('No se pudo abrir el centro de soporte');
+                    }
+                  },
+                ),
                 ListTile(
                   leading: Icon(Icons.logout, color: Colors.red.shade400),
                   title: Text('Cerrar Sesión', style: TextStyle(color: Colors.red.shade400)),
